@@ -127,6 +127,84 @@ if __name__ == "__main__":
     print("\n--- Test Complete ---")
     print(f"Check the '{FACTS_FILE}' file to see your archive!")
 
+import requests
+import json
+import time
+import schedule
+
+# --- Configuration ---
+API_URL = "https://uselessfacts.jsph.pl/random.json?language=en"
+ARCHIVE_FILE = "facts_archive.json"
+FETCH_INTERVAL_MINUTES = 1 # Set how often to fetch a new fact (in minutes)
+
+# --- Core Functions (You should already have these) ---
+
+def load_archive(filename):
+    """Loads the fact archive from a JSON file."""
+    try:
+        with open(filename, 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        # If file doesn't exist or is empty, start with an empty list
+        return []
+
+def save_archive(filename, data):
+    """Saves the fact archive to a JSON file."""
+    with open(filename, 'w') as f:
+        json.dump(data, f, indent=4)
+    print(f"✅ Archive updated! Total facts: {len(data)}")
+
+def fetch_fact(url):
+    """Fetches a single fact from the API."""
+    try:
+        response = requests.get(url)
+        response.raise_for_status()  # Raises an HTTPError for bad responses (4xx or 5xx)
+        fact_data = response.json()
+        return fact_data['text']
+    except requests.exceptions.RequestException as e:
+        print(f"⚠️ Error fetching fact: {e}")
+        return None
+
+# --- The Automation Job ---
+
+def collect_new_fact():
+    """
+    This is the main job function that the scheduler will run.
+    It orchestrates fetching, checking for duplicates, and saving.
+    """
+    print(f"🚀 Running job: Trying to collect a new fact...")
+    
+    # 1. Load existing facts
+    fact_archive = load_archive(ARCHIVE_FILE)
+    
+    # 2. Fetch a new fact
+    new_fact = fetch_fact(API_URL)
+    
+    if new_fact:
+        # 3. Check for duplicates (case-insensitive for robustness)
+        is_duplicate = any(new_fact.lower() == existing_fact.lower() for existing_fact in fact_archive)
+        
+        if not is_duplicate:
+            # 4. If unique, add to archive and save
+            fact_archive.append(new_fact)
+            save_archive(ARCHIVE_FILE, fact_archive)
+        else:
+            print("💡 Fact is a duplicate. Not adding.")
+
+# --- Scheduler Setup & Execution ---
+
+print("🎯 Automation script started. Press Ctrl+C to exit.")
+
+# Schedule the job to run at the specified interval
+schedule.every(FETCH_INTERVAL_MINUTES).minutes.do(collect_new_fact)
+
+# Run the first job immediately without waiting for the first interval
+collect_new_fact() 
+
+# Infinite loop to keep the script running and check for scheduled jobs
+while True:
+    schedule.run_pending()
+    time.sleep(1) # Sleep for 1 second to prevent high CPU usage
 
 
 
