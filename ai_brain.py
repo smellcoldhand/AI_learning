@@ -1,38 +1,42 @@
 import requests
 import os
-import json
-
-# 1. Import ADK and Gemini components
+import textwrap
 import google.generativeai as genai
 from adk.api import agent, llm, tool
 
-# --- 環境變數設定 (您的程式碼保持不變) ---
-# 確保你已經在你的環境中設定了這些變數
-# export GOOGLE_API_KEY="your_gemini_api_key"
-# export GOOGLE_SEARCH_ENGINE_ID="your_search_engine_id"
-
+# --- Configuration ---
 API_KEY = os.environ.get("GOOGLE_API_KEY")
 SEARCH_ENGINE_ID = os.environ.get("GOOGLE_SEARCH_ENGINE_ID")
 
-# --- 2. 將您的搜尋功能改寫為 ADK 工具 ---
+# --- Helper Function for UI ---
+def display_ai_response(text: str):
+    """Formats and prints the AI's response in a visually appealing box."""
+    print("\n💡 AI 回覆：")
+    # Use textwrap to handle long lines gracefully
+    wrapped_text = textwrap.fill(text, width=80)
+    
+    # Create a simple box for the output
+    print("╔" + "═" * 82 + "╗")
+    for line in wrapped_text.split('\n'):
+        print(f"║ {line:<80} ║")
+    print("╚" + "═" * 82 + "╝")
+
+
+# --- Agent Tool Definition ---
 @tool.run
 def google_search(search_query: str) -> str:
     """
-    當需要回答關於近期事件或網路上的特定資訊時，使用此工具進行 Google 搜尋。
-    這個 docstring 非常重要，LLM 會讀取它來決定何時使用此工具！
+    Performs a Google search for the given query and returns a formatted string
+    of the top 5 results.
     """
-    print(f"⚡ 工具執行：正在搜尋 '{search_query}'...")
+    print(f"⚡ 工具執行：正在透過 Google 搜尋 '{search_query}'...")
     
     base_url = "https://www.googleapis.com/customsearch/v1"
-    
-    # 注意：這裡的 API_KEY 是指 Google Cloud Search API 的金鑰
-    # Gemini 的金鑰已透過 genai.configure() 設定
-    # 為了簡化，我們假設它們是同一個，但在生產環境中可能不同
     params = {
         'key': API_KEY,
         'cx': SEARCH_ENGINE_ID,
         'q': search_query,
-        'num': 5  # 限制回傳 5 筆結果以保持簡潔
+        'num': 5  # Limit to 5 results to keep the context concise for the LLM
     }
 
     try:
@@ -42,13 +46,13 @@ def google_search(search_query: str) -> str:
 
         if 'items' not in search_results or not search_results['items']:
             return "⚠️ 找不到相關的網路搜尋結果。"
-
-        # 3. 將結果格式化為單一字串，方便 LLM 閱讀
-        formatted_string = "以下是網路搜尋結果：\n\n"
+            
+        formatted_string = "以下是網路搜尋結果摘要：\n\n"
         for i, item in enumerate(search_results['items'], 1):
             formatted_string += f"[{i}] 標題: {item.get('title')}\n"
             formatted_string += f"    摘要: {item.get('snippet')}\n"
-            formatted_string += f"    連結: {item.get('link')}\n\n"
+            # We don't need to include the link in the string passed to the LLM
+            # formatted_string += f"    連結: {item.get('link')}\n\n"
         
         return formatted_string
 
@@ -57,32 +61,34 @@ def google_search(search_query: str) -> str:
     except KeyError as e:
         return f"❌ 解析回應時發生錯誤，缺少鍵：{e}"
 
-# --- 4. 主程式：組裝並執行 Agent ---
+# --- Main Execution Block ---
 if __name__ == "__main__":
     if not API_KEY or not SEARCH_ENGINE_ID:
         print("❌ 錯誤：請先設定 'GOOGLE_API_KEY' 和 'GOOGLE_SEARCH_ENGINE_ID' 環境變數。")
     else:
-        print("🤖 AI Web Explorer 已啟動！(輸入 'exit' 結束)")
-        
-        # 設定 Gemini API
-        genai.configure(api_key=API_KEY)
+        print("\n" + "="*50)
+        print("🤖 AI Web Explorer 已啟動！")
+        print("   我會上網搜尋並總結你的問題。")
+        print("="*50)
+        print("   (輸入 'exit' 或 'quit' 即可結束)")
 
-        # 建立 Agent 的組成部分
-        my_llm = llm.LLM()  # Agent 的大腦 (Gemini)
-        my_tools = tool.ToolKit([google_search]) # Agent 可用的工具箱
-        
-        # 組裝 Agent
+        # Configure the Generative AI and Agent
+        genai.configure(api_key=API_KEY)
+        my_llm = llm.LLM() 
+        my_tools = tool.ToolKit([google_search]) 
         my_agent = agent.Agent(llm=my_llm, tools=my_tools)
 
-        # 建立互動式對話循環
+        # Main interaction loop
         while True:
-            user_query = input("\n請輸入您的問題：")
-            if user_query.lower() == 'exit':
-                print("👋 感謝使用，再見！")
+            user_query = input("\n👤 請輸入您的問題：")
+            if user_query.lower() in ['exit', 'quit']:
+                print("\n👋 感謝使用，再見！")
                 break
             
-            # 執行 Agent！ADK 會自動判斷是否需要呼叫 google_search
+            print("\n🧠 AI 處理中，請稍候...")
+            
+            # Execute the Agent! ADK automatically decides if google_search is needed.
             final_answer = my_agent.run(user_query)
             
-            print("\n💡 AI回覆：")
-            print(final_answer)
+            # Display the final answer using our new formatting function
+            display_ai_response(final_answer)
